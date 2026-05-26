@@ -1,0 +1,5 @@
+[compat]
+julia = "1.10"
+JLD2 = "0.4"
+CodecZstd = "0.7"
+DataStructures = "0.18"
