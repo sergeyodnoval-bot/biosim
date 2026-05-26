@@ -1,27 +1,17 @@
 ```
 # Julia-specific ignores
+.julia/
 *.ji
-*.jl.cov
-*.jl.mem
-*.so
-*.dylib
-*.dll
-
-# Build artifacts
-build/
-dist/
-*.o
-*.a
-*.obj
+*.mem
+*.lock
+Manifest.toml
+logs/
+test/
+docs/build/
 
 # Dependencies
-.julia/
 deps/
-
-# Logs and temp files
-*.log
-*.tmp
-*.swp
+build/
 
 # Environment
 .env
@@ -34,10 +24,9 @@ deps/
 *.swp
 *.swo
 
-# Coverage
-coverage/
-htmlcov/
-.coverage
+# Logs and temp files
+*.log
+*.tmp
 
 # OS
 .DS_Store
