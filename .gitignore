@@ -1,1 +1,32 @@
-(empty)
+# Julia-specific ignores
+.julia/
+*.ji
+*.mem
+*.lock
+Manifest.toml
+logs/
+test/
+docs/build/
+
+# Dependencies
+deps/
+build/
+
+# Environment
+.env
+.env.local
+*.env.*
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs and temp files
+*.log
+*.tmp
+
+# OS
+.DS_Store
+Thumbs.db
