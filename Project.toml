@@ -1,3 +1,6 @@
+name = "SimulationClock"
+uuid = "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+
 [deps]
 JLD2 = "033835bb-8acc-5ee8-8aae-3f567f8a3819"
 CodecZstd = "6b39b394-48ab-5f6b-90c4-2c02e97c4bd7"
