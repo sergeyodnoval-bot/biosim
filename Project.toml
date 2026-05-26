@@ -4,7 +4,7 @@ CodecZstd = "6b39b394-48ab-5f6b-90c4-2c02e97c4bd7"
 DataStructures = "864edb3b-99cc-5e75-8d2d-829cb0a9cfe8"
 
 [compat]
-julia = "1.10-1"
+julia = "1.10"
 JLD2 = "0.4"
 CodecZstd = "0.7"
 DataStructures = "0.18"
