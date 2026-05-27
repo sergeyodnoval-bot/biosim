@@ -2,20 +2,11 @@ module SignalTypes
 
 using UUIDs
 
-# AbstractSignal определяется здесь, а затем экспортируется в EventBus
 abstract type AbstractSignal end
 
 export AbstractSignal, NeuralSignal, HormoneSignal, MetabolicSignal
 
-"""
-    NeuralSignal <: AbstractSignal
-
-Сигнал нервной системы. Используется для быстрой передачи команд.
-
-# Fields
-Наследует все поля `BaseSignal`
-"""
-struct NeuralSignal <: AbstractSignal
+mutable struct NeuralSignal <: AbstractSignal
     id::UUID
     timestamp::Float64
     source::Symbol
@@ -27,20 +18,12 @@ struct NeuralSignal <: AbstractSignal
     function NeuralSignal(timestamp::Float64, source::Symbol, target::Symbol; 
                           receptors::Vector{Symbol}=Symbol[], 
                           data::NamedTuple=(;), 
-                          ttl::Float64=10.0)  # Короткий TTL для нейросигналов
+                          ttl::Float64=10.0)
         new(uuid4(), timestamp, source, target, receptors, data, ttl)
     end
 end
 
-"""
-    HormoneSignal <: AbstractSignal
-
-Гормональный сигнал. Используется для медленной регуляции процессов.
-
-# Fields
-Наследует все поля `BaseSignal`
-"""
-struct HormoneSignal <: AbstractSignal
+mutable struct HormoneSignal <: AbstractSignal
     id::UUID
     timestamp::Float64
     source::Symbol
@@ -52,20 +35,12 @@ struct HormoneSignal <: AbstractSignal
     function HormoneSignal(timestamp::Float64, source::Symbol, target::Symbol; 
                            receptors::Vector{Symbol}=Symbol[], 
                            data::NamedTuple=(;), 
-                           ttl::Float64=300.0)  # Длинный TTL для гормонов
+                           ttl::Float64=300.0)
         new(uuid4(), timestamp, source, target, receptors, data, ttl)
     end
 end
 
-"""
-    MetabolicSignal <: AbstractSignal
-
-Метаболический сигнал. Используется для передачи информации о состоянии метаболизма.
-
-# Fields
-Наследует все поля `BaseSignal`
-"""
-struct MetabolicSignal <: AbstractSignal
+mutable struct MetabolicSignal <: AbstractSignal
     id::UUID
     timestamp::Float64
     source::Symbol

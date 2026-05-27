@@ -1,45 +1,32 @@
 #!/usr/bin/env julia
 # ============================================================================
 # Demo: SimulationClock
-# Запуск симуляции 0→365 дней с логированием dt и авто-чекпоинтами каждые 30 дней
 # ============================================================================
 
-using Logging: @info, @warn, @error, LogLevel
+using Logging
+using Logging: ConsoleLogger, with_logger, @info, @warn, @error, LogLevel
+using Dates
+using Statistics
 
 # Подключаем модуль
 include("../src/SimulationClock.jl")
-using .SimulationClock
 
-# Настройка логирования
-logging_config() = begin
-    # Форматированный вывод логов
-    logger = ConsoleLogger(stderr, Logging.Info)
-    global_logger(logger)
-end
+# Даём модулю короткое имя
+const SC = SimulationClock
 
 # ============================================================================
 # MOCK DERIVATIVE FUNCTIONS
 # ============================================================================
 
-"""
-    smooth_derivative
-
-Имитирует плавную сезонную функцию (синусоида).
-"""
 smooth_derivative() = (t::Float64) -> 0.5 + 0.3 * sin(2π * t / 365)
 
-"""
-    variable_derivative
-
-Имитирует переменную производную с участками разной "жёсткости".
-"""
 variable_derivative() = (t::Float64) -> begin
     if 50 <= t <= 100
-        return 5.0  # "Жёсткий" участок
+        return 5.0
     elseif 200 <= t <= 250
-        return 1e-5  # "Мягкий" участок
+        return 1e-5
     else
-        return 0.1  # Нормальный режим
+        return 0.1
     end
 end
 
@@ -52,7 +39,7 @@ function create_checkpoint_callback(clock, interval_days::Int)
     return () -> begin
         counter[] += 1
         checkpoint_id = "auto_$(counter[])_$(Dates.format(Dates.now(), "yyyymmdd_HHMMSS"))"
-        filepath = save_checkpoint(clock; id = checkpoint_id)
+        filepath = SC.save_checkpoint(clock; id = checkpoint_id)
         @info "АВТО-ЧЕКПОИНТ" step = counter[] path = filepath t = clock.current_time
     end
 end
@@ -75,13 +62,11 @@ function run_demo(;
     use_variable_derivative::Bool = true
 )
     
-    logging_config()
-    
     @info "Запуск демо SimulationClock" 
     @info "Параметры:" start_day = start_day end_day = end_day initial_dt = initial_dt
     
-    # Создание часов
-    clock = SimulationClock(
+    # Создание часов - используем SC.SimulationClock
+    clock = SC.SimulationClock(
         start_day,
         end_day,
         initial_dt;
@@ -96,20 +81,20 @@ function run_demo(;
     # Добавление событий для авто-чекпоинтов
     checkpoint_times = collect(checkpoint_interval:checkpoint_interval:Int(end_day - 1))
     for t in checkpoint_times
-        add_event!(clock, t, create_checkpoint_callback(clock, checkpoint_interval); 
+        SC.add_event!(clock, Float64(t), create_checkpoint_callback(clock, checkpoint_interval); 
                    callback_id = "checkpoint_$(Int(t))days")
     end
     
     # Добавление статусных событий
     for t in [0.0, 100.0, 200.0, 300.0]
         if t > start_day && t < end_day
-            add_event!(clock, t, create_status_callback(); callback_id = "status_$(Int(t))days")
+            SC.add_event!(clock, t, create_status_callback(); callback_id = "status_$(Int(t))days")
         end
     end
     
     # Начальный чекпоинт
     @info "Сохранение начального состояния"
-    save_checkpoint(clock; id = "initial_state")
+    SC.save_checkpoint(clock; id = "initial_state")
     
     # Запуск симуляции
     @info "Начало симуляции..."
@@ -117,16 +102,26 @@ function run_demo(;
     step_count = 0
     dt_history = Float64[]
     
-    status = run!(clock, derivative_func; max_steps = 1_000_000)
+    # Ручной подсчёт шагов
+    while clock.current_time < clock.end_time - SC.TIME_EPS && step_count < 1_000_000
+        status = SC.step!(clock, derivative_func)
+        step_count += 1
+        push!(dt_history, clock.current_dt)
+        
+        if status == SC.DIVERGENCE
+            @warn "Дивергенция на шаге $step_count"
+            break
+        end
+    end
     
     elapsed = time() - start_time
     
     # Статистика
-    state = get_state(clock)
+    state = SC.get_state(clock)
     
     @info "="^60
     @info "СИМУЛЯЦИЯ ЗАВЕРШЕНА"
-    @info "Статус:" status = status
+    @info "Статус:" status = state.step_status
     @info "Итоговое время:" t = state.current_time
     @info "Итоговый шаг:" dt = state.current_dt
     @info "Всего шагов:" steps = step_count
