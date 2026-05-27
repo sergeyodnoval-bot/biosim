@@ -256,7 +256,7 @@ macro implement_system(SystemType)
     esc(quote
         # Методы уже определены в модуле ISystem, просто напоминаем о необходимости реализации
         # Этот макрос служит документационной цели
-        @doc $doc_string $($(SystemType))
+        @doc $$doc_string $($(SystemType))
     end)
 end
 
