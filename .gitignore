@@ -1,33 +1,30 @@
-```
-# Julia-specific ignores
-.julia/
+# Compiled and build artifacts
 *.ji
-*.jl.cov
-*.jl.mem
+*.o
+*.obj
 *.so
 *.dylib
 *.dll
+*.exe
+*.out
 
 # Dependencies
+.julia/
 deps/
-test/
-
-# Build artifacts
 build/
 dist/
-*.so
-*.dylib
-*.dll
-
-# Environment
-.env
-.env.local
-*.env.*
+target/
 
 # Logs and temp files
 *.log
 *.tmp
 *.swp
+*.swo
+
+# Environment
+.env
+.env.local
+*.env.*
 
 # Editors
 .vscode/
@@ -35,21 +32,18 @@ dist/
 *.swp
 *.swo
 
-# OS
-.DS_Store
-Thumbs.db
-
-# Coverage
-.coverage
-coverage/
-htmlcov/
-
-# Python (if mixed project)
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-.Python
-*.so
-.PyInstaller/
-```
+# Julia-specific
+*.jl.cov
+*.jl.info
+Coverage/
+.JunoSettings
+Manifest.toml
+PlotlyJS/*
+!PlotlyJS/src
+!PlotlyJS/deps
+!PlotlyJS/LICENSE
+!PlotlyJS/README.md
+!PlotlyJS/Project.toml
+!PlotlyJS/src/*.jl
+!PlotlyJS/deps/*.jl
+!PlotlyJS/test/*.jl

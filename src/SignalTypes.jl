@@ -1,7 +1,7 @@
 module SignalTypes
 
-using ..EventBus
 using UUIDs
+using ..EventBus: AbstractSignal
 
 export NeuralSignal, HormoneSignal, MetabolicSignal
 

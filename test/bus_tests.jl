@@ -7,9 +7,9 @@ using JLD2
 
 # Подключаем модули
 include("../src/EventBus.jl")
-include("../src/SignalTypes.jl")
-
 using .EventBus
+
+include("../src/SignalTypes.jl")
 using .SignalTypes
 
 export run_all_tests
