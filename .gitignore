@@ -1,23 +1,30 @@
 ```
-# Julia specific
-.julia/
+# Compiled and build artifacts
 *.ji
-*.jl.cov
-*.jl.info
-.coverage/
-docs/build/
+*.o
+*.obj
+*.so
+*.dylib
+*.dll
+*.exe
+*.out
 
 # Dependencies
+.julia/
+.julia-*/
 deps/
-build/
+test/
+docs/build/
 
-# Logs
+# Logs and temp files
 *.log
+*.tmp
+*.swp
 
 # Environment
 .env
 .env.local
-*.env.*
+.env.*
 
 # Editors
 .vscode/
@@ -25,11 +32,18 @@ build/
 *.swp
 *.swo
 
-# OS
-.DS_Store
-Thumbs.db
+# Coverage
+.coverage
+coverage/
+htmlcov/
+
+# Julia-specific
+.JuliaFormatter.toml
+.repl_history.jl
+*.res
 
 # Build/test artifacts
-test/reports/
-*.out
+build/
+dist/
+target/
 ```
