@@ -1,378 +1,380 @@
-# Чек-лист ручной валидации SimulationClock
+# Чек-лист ручной валидации EventBus.jl
 
-## Предварительные требования
+## 1. Проверка типостабильности
 
-- Julia 1.10+
-- Установленные зависимости: `JLD2`, `CodecZstd`, `DataStructures`
-- Пустая директория `checkpoints/` или готовность к очистке
+### Цель
+Убедиться, что в горячем пути (flush!) нет типов `Any` и аллокаций.
 
----
-
-## 1. Базовый запуск демо
-
-**Команда:**
-```bash
-cd /workspace
-julia --project examples/demo_clock.jl --end 100
-```
-
-**Ожидаемые метрики:**
-- [ ] Симуляция завершается со статусом `ENDED`
-- [ ] Время монотонно возрастает (проверить по логам `TIME_TICK`)
-- [ ] Финальное время ≈ 100.0 (±1e-9)
-- [ ] Созданы чекпоинты в `checkpoints/` каждые ~30 дней
-
-**Что смотреть в логах:**
-- Сообщения `TIME_TICK` с увеличивающимся `t`
-- Сообщения `CHECKPOINT_SAVED` с путями к файлам
-- Отсутствие `ERROR` и неожиданных `WARN`
-
----
-
-## 2. Проверка адаптивного шага (уменьшение)
-
-**Команда:**
-```bash
-julia --project -e '
-include("src/SimulationClock.jl")
-using .SimulationClock
-
-clock = SimulationClock(0.0, 50.0, 1.0; tolerance = 1e-3)
-initial_dt = clock.current_dt
-
-for i in 1:20
-    status = step!(clock, t -> 10.0)  # Жёсткий сигнал
-    println("Step $i: dt = $(clock.current_dt), status = $status")
-    if clock.current_dt <= initial_dt / 4
-        break
-    end
-end
-
-println("Initial dt: $initial_dt, Final dt: $(clock.current_dt)")
-println("Decrease factor: $(initial_dt / clock.current_dt)")
-'
-```
-
-**Ожидаемые метрики:**
-- [ ] `dt` уменьшается минимум в 3 раза
-- [ ] Статусы включают `OK` или `MIN_DT_REACHED`
-- [ ] Нет `DIVERGENCE`
-
----
-
-## 3. Проверка адаптивного шага (увеличение)
-
-**Команда:**
-```bash
-julia --project -e '
-include("src/SimulationClock.jl")
-using .SimulationClock
-
-clock = SimulationClock(0.0, 100.0, 1e-5; tolerance = 1e-3, max_dt = 1.0)
-
-for i in 1:50
-    status = step!(clock, t -> 1e-5)  # Мягкий сигнал
-    if clock.current_dt >= 0.9
-        println("Reached max_dt at step $i, dt = $(clock.current_dt)")
-        break
-    end
-end
-
-println("Final dt: $(clock.current_dt)")
-@assert clock.current_dt >= 0.9 "dt не достиг max_dt"
-'
-```
-
-**Ожидаемые метрики:**
-- [ ] `dt` растёт до `max_dt` (≥ 0.9)
-- [ ] Не превышает `max_dt`
-
----
-
-## 4. Проверка границ dt
-
-**Команда:**
-```bash
-julia --project -e '
-include("src/SimulationClock.jl")
-using .SimulationClock
-
-# Тест min_dt
-clock_min = SimulationClock(0.0, 100.0, 0.1; min_dt = 1e-6)
-for i in 1:50
-    step!(clock_min, t -> 100.0)
-end
-@assert clock_min.current_dt >= 1e-6 "dt ниже min_dt!"
-println("min_dt test passed: dt = $(clock_min.current_dt)")
-
-# Тест max_dt
-clock_max = SimulationClock(0.0, 100.0, 1e-6; max_dt = 1.0)
-for i in 1:100
-    step!(clock_max, t -> 1e-6)
-end
-@assert clock_max.current_dt <= 1.0 "dt выше max_dt!"
-println("max_dt test passed: dt = $(clock_max.current_dt)")
-'
-```
-
-**Ожидаемые метрики:**
-- [ ] `dt` никогда не выходит за `[1e-6, 1.0]`
-- [ ] При достижении `min_dt` генерируется `MIN_DT_WARNING`
-
----
-
-## 5. Имитация дивергенции (NaN)
-
-**Команда:**
-```bash
-julia --project -e '
-include("src/SimulationClock.jl")
-using .SimulationClock
-
-clock = SimulationClock(0.0, 100.0, 0.1)
-
-println("Testing NaN divergence...")
-status = step!(clock, t -> NaN)
-
-println("Status: $status")
-@assert status == DIVERGENCE "Ожидался статус DIVERGENCE"
-@assert clock.step_status == DIVERGENCE
-
-# Проверка аварийного чекпоинта
-emergency_checkpoints = filter(f -> occursin("emergency", f), readdir("checkpoints"))
-println("Emergency checkpoints created: $(length(emergency_checkpoints))")
-@assert length(emergency_checkpoints) >= 1 "Аварийный чекпоинт не создан"
-
-# Очистка
-for f in emergency_checkpoints
-    rm(joinpath("checkpoints", f))
-end
-println("NaN divergence test PASSED")
-'
-```
-
-**Ожидаемые метрики:**
-- [ ] Статус `DIVERGENCE`
-- [ ] Создан аварийный чекпоинт с префиксом `emergency_`
-- [ ] Лог `DIVERGENCE_WARNING` с `deriv = NaN`
-
----
-
-## 6. Имитация дивергенции (Inf)
-
-**Команда:**
-```bash
-julia --project -e '
-include("src/SimulationClock.jl")
-using .SimulationClock
-
-clock = SimulationClock(0.0, 100.0, 0.1)
-
-println("Testing Inf divergence...")
-status = step!(clock, t -> Inf)
-
-println("Status: $status")
-@assert status == DIVERGENCE
-println("Inf divergence test PASSED")
-'
-```
-
-**Ожидаемые метрики:**
-- [ ] Статус `DIVERGENCE`
-- [ ] Аварийный чекпоинт создан
-
----
-
-## 7. Проверка чекпоинтов (save → modify → load → compare)
-
-**Команда:**
-```bash
-julia --project -e '
-include("src/SimulationClock.jl")
-using .SimulationClock
-
-clock = SimulationClock(0.0, 365.0, 0.5)
-
-# Продвигаем время
-for i in 1:20
-    step!(clock, t -> 1e-4)
-end
-
-original_state = get_state(clock)
-println("Original state: t=$(original_state.current_time), dt=$(original_state.current_dt)")
-
-# Сохраняем
-filepath = save_checkpoint(clock; id = "validation_test")
-println("Checkpoint saved: $filepath")
-
-# Модифицируем
-clock.current_time += 10.0
-clock.current_dt *= 5.0
-println("Modified: t=$(clock.current_time), dt=$(clock.current_dt)")
-
-# Загружаем
-restored = load_checkpoint(filepath)
-restored_state = get_state(restored)
-println("Restored: t=$(restored_state.current_time), dt=$(restored_state.current_dt)")
-
-# Сравниваем
-@assert abs(original_state.current_time - restored_state.current_time) < 1e-9
-@assert abs(original_state.current_dt - restored_state.current_dt) < 1e-9
-@assert original_state.min_dt == restored_state.min_dt
-@assert original_state.max_dt == restored_state.max_dt
-
-println("Checkpoint consistency test PASSED")
-
-# Очистка
-rm(filepath)
-'
-```
-
-**Ожидаемые метрики:**
-- [ ] `deep_equal(original_state, restored_state) == true` для всех числовых полей
-- [ ] Файл чекпоинта существует после записи
-- [ ] Файл удалён после теста
-
----
-
-## 8. Производительность (10⁵ шагов)
-
-**Команда:**
-```bash
-julia --project -e '
-include("src/SimulationClock.jl")
-using .SimulationClock
-using Dates
-
-clock = SimulationClock(0.0, 10000.0, 0.1)
-
-GC.gc()
-start = time()
-
-steps = 0
-while steps < 100_000 && clock.step_status != ENDED
-    step!(clock, t -> 1e-4)
-    steps += 1
-end
-
-elapsed = time() - start
-println("Steps: $steps")
-println("Time: $(round(elapsed, digits=3))s")
-println("Steps/sec: $(round(steps/max(elapsed, 1e-6), digits=1))")
-
-@assert elapsed <= 5.0 "Превышен лимит времени (5 сек)"
-println("Performance test PASSED")
-'
-```
-
-**Ожидаемые метрики:**
-- [ ] 10⁵ шагов ≤ 5 секунд (放宽 для CI)
-- [ ] Аллокации ≤ 50 MB (можно проверить через `@time` или `@allocated`)
-
----
-
-## 9. Обработка событий
-
-**Команда:**
-```bash
-julia --project -e '
-include("src/SimulationClock.jl")
-using .SimulationClock
-
-events_fired = Int[]
-
-clock = SimulationClock(0.0, 20.0, 1.0)
-for t in [5.0, 10.0, 15.0]
-    local t_copy = t
-    add_event!(clock, t_copy, () -> push!(events_fired, Int(t_copy)))
-end
-
-run!(clock, t -> 1e-4)
-
-println("Events fired: $events_fired")
-@assert events_fired == [5, 10, 15] "События не сработали в порядке"
-println("Event handling test PASSED")
-'
-```
-
-**Ожидаемые метрики:**
-- [ ] Все события выполнены в порядке возрастания времени
-- [ ] Статус `EVENT_TRIGGERED` при выполнении callback
-
----
-
-## 10. Валидация конструктора
-
-**Команда:**
-```bash
-julia --project -e '
-include("src/SimulationClock.jl")
-using .SimulationClock
-
-tests = [
-    (() -> SimulationClock(-1.0, 10.0, 0.1), "start_time < 0"),
-    (() -> SimulationClock(10.0, 5.0, 0.1), "end_time <= start_time"),
-    (() -> SimulationClock(0.0, 10.0, 1e-7), "initial_dt < min_dt"),
-    (() -> SimulationClock(0.0, 10.0, 11.0), "initial_dt > max_dt"),
-]
-
-for (test_fn, desc) in tests
-    try
-        test_fn()
-        println("FAILED: $desc - исключение не брошено")
-    catch e
-        if e isa AssertionError
-            println("PASSED: $desc")
-        else
-            println("FAILED: $desc - неверный тип исключения: $e")
-        end
-    end
-end
-'
-```
-
-**Ожидаемые метрики:**
-- [ ] Все 4 теста бросают `AssertionError`
-
----
-
-## Сводный чек-лист
-
-| № | Тест | Статус | Примечание |
-|---|------|--------|------------|
-| 1 | Базовый запуск демо | ☐ | |
-| 2 | Адаптивное уменьшение dt | ☐ | ≥3 раз |
-| 3 | Адаптивное увеличение dt | ☐ | до max_dt |
-| 4 | Границы dt | ☐ | [min_dt, max_dt] |
-| 5 | Дивергенция NaN | ☐ | + аварийный чекпоинт |
-| 6 | Дивергенция Inf | ☐ | + аварийный чекпоинт |
-| 7 | Чекпоинт consistency | ☐ | save/modify/load/compare |
-| 8 | Производительность | ☐ | 10⁵ шагов ≤ 5 сек |
-| 9 | Обработка событий | ☐ | FIFO порядок |
-| 10 | Валидация конструктора | ☐ | 4 assertion теста |
-
----
-
-## Troubleshooting
-
-### Ошибка: `UndefVarError: Dates not defined`
-**Решение:** Убедитесь, что `using Dates` есть в `SimulationClock.jl`
-
-### Ошибка: `LoadError: ArgumentError: Package JLD2 not found`
-**Решение:** 
-```bash
-julia --project -e 'using Pkg; Pkg.add(["JLD2", "CodecZstd", "DataStructures"])'
-```
-
-### Чекпоинты не создаются
-**Проверьте:**
-- Права на запись в директорию `checkpoints/`
-- Наличие места на диске
-- Корректность путей (абсолютные vs относительные)
-
-### Логи не выводятся
-**Решение:** Установите уровень логирования:
+### Шаги
 ```julia
+using .EventBus
+using .SignalTypes
+
+# Создаём шину и подписку
+bus = EventBus()
+subscribe!(bus, :target, BaseSignal, s -> nothing)
+
+# Публикуем тестовый сигнал
+signal = BaseSignal(1.0, :source, :target; receptors=Symbol[])
+publish!(bus, :source, signal)
+
+# Проверяем типостабильность
+@code_warntype flush!(bus, 2.0)
+```
+
+### Критерии passes
+- ✅ В выводе `@code_warntype` нет предупреждений с `::Any`
+- ✅ Тип возвращаемого значения: `Vector{DeliveryReport}`
+- ✅ Локальные переменные имеют конкретные типы (не `::Any`)
+
+### Дополнительная проверка через BenchmarkTools
+```julia
+using BenchmarkTools
+@btime flush!($bus, 2.0)  # Ожидаем минимум аллокаций
+```
+
+---
+
+## 2. Имитация Overflow inbox
+
+### Цель
+Проверить корректную обработку переполнения inbox (>10_000 событий).
+
+### Шаги
+```julia
+using .EventBus, .SignalTypes
 using Logging
-global_logger(ConsoleLogger(stderr, Logging.Info))
+
+# Настраиваем логирование для перехвата WARN
+logger = SimpleLogger(stdout, Logging.Warn)
+
+with_logger(logger) do
+    bus = EventBus()
+    
+    # Подписываем систему
+    subscribe!(bus, :target, BaseSignal, s -> nothing)
+    
+    # Публикуем 10_050 событий
+    for i in 1:10_050
+        signal = BaseSignal(float(i), :source, :target; 
+                            receptors=Symbol[], data=(;index=i))
+        publish!(bus, :source, signal)
+    end
+    
+    # Flush
+    reports = flush!(bus, 20_000.0)
+    
+    # Проверяем результат
+    println("Размер inbox: $(length(inbox(bus, :target)))")
+    println("Статистика overflow: $(bus.stats[:overflow])")
+end
+```
+
+### Критерии passes
+- ✅ Размер inbox ≤ 10_000
+- ✅ `bus.stats[:overflow]` ≥ 50
+- ✅ В логе присутствует `INBOX_OVERFLOW` (WARN уровень)
+- ✅ Дропнуты самые старые события (проверить по индексам)
+
+---
+
+## 3. Чтение лога доставки
+
+### Цель
+Научиться интерпретировать отчёты о доставке и логи событий.
+
+### Шаги
+```julia
+using .EventBus, .SignalTypes
+using Logging
+
+# Включаем DEBUG логирование
+logger = SimpleLogger(stdout, Logging.Debug)
+
+with_logger(logger) do
+    bus = EventBus()
+    
+    # Подписки с разными рецепторами
+    subscribe!(bus, :sys1, HormoneSignal, s -> nothing; 
+               receptors=[:receptor_a])
+    subscribe!(bus, :sys2, HormoneSignal, s -> nothing; 
+               receptors=[:receptor_b])
+    
+    # Сигнал с рецептором receptor_a
+    signal = HormoneSignal(0.0, :source, :ALL; 
+                           receptors=[:receptor_a],
+                           data=(;test=true))
+    publish!(bus, :source, signal)
+    
+    # Flush
+    reports = flush!(bus, 1.0)
+    
+    # Анализируем отчёты
+    println("\n=== Отчёты о доставке ===")
+    for r in reports
+        status_str = string(r.status)
+        println("$(r.target): $status_str ($(r.signal_type))")
+    end
+    
+    # Статистика
+    println("\n=== Статистика ===")
+    for (k, v) in bus.stats
+        println("$k: $v")
+    end
+end
+```
+
+### Ожидаемый вывод
+```
+=== Отчёты о доставке ===
+sys1: DELIVERED (HormoneSignal)
+sys2: FILTERED (HormoneSignal)
+
+=== Статистика ===
+published: 1
+delivered: 1
+filtered: 1
+expired: 0
+overflow: 0
+```
+
+### Критерии passes
+- ✅ sys1 получил статус `DELIVERED` (рецепторы совпали)
+- ✅ sys2 получил статус `FILTERED` (рецепторы не пересеклись)
+- ✅ В DEBUG логе видны события `EVENT_DELIVERED` и `EVENT_FILTERED`
+- ✅ Статистика соответствует ожидаемой
+
+---
+
+## 4. Проверка TTL истечения
+
+### Цель
+Убедиться, что просроченные события маркируются как `EXPIRED`.
+
+### Шаги
+```julia
+using .EventBus, .SignalTypes
+
+bus = EventBus()
+subscribe!(bus, :target, BaseSignal, s -> println("Получен сигнал!"))
+
+# Сигнал с TTL=10 дней
+signal = BaseSignal(0.0, :source, :target; 
+                    receptors=Symbol[], ttl=10.0)
+publish!(bus, :source, signal)
+
+# Flush при clock_time=5 (в пределах TTL)
+println("Flush при clock_time=5:")
+reports1 = flush!(bus, 5.0)
+println("Статус: $(reports1[1].status)")
+
+# Очищаем и тестируем снова
+clear!(bus)
+signal2 = BaseSignal(0.0, :source, :target; 
+                     receptors=Symbol[], ttl=10.0)
+publish!(bus, :source, signal2)
+
+# Flush при clock_time=15 (TTL истёк)
+println("\nFlush при clock_time=15:")
+reports2 = flush!(bus, 15.0)
+println("Статус: $(reports2[1].status)")
+println("Обработчик вызван: $(bus.stats[:delivered] == 0)")
+```
+
+### Критерии passes
+- ✅ При clock_time=5 статус `DELIVERED`
+- ✅ При clock_time=15 статус `EXPIRED`
+- ✅ Обработчик не вызван для просроченного сигнала
+- ✅ В логе присутствует `TTL_EXPIRED` (WARN)
+
+---
+
+## 5. Проверка сериализации JLD2 Roundtrip
+
+### Цель
+Убедиться, что состояние шины сохраняется и восстанавливается корректно.
+
+### Шаги
+```julia
+using .EventBus, .SignalTypes
+import JLD2
+
+bus = EventBus()
+
+# Регистрируем подписки с config
+subscribe!(bus, :sys1, HormoneSignal, s -> nothing;
+           receptors=[:r1], config=(;name="test1", priority=1))
+subscribe!(bus, :sys2, NeuralSignal, s -> nothing;
+           receptors=[:r2], config=(;name="test2", priority=2))
+
+# Публикуем и доставляем сигналы
+signal1 = HormoneSignal(1.0, :src, :sys1; receptors=[:r1])
+signal2 = NeuralSignal(2.0, :src, :sys2; receptors=[:r2])
+publish!(bus, :src, signal1)
+publish!(bus, :src, signal2)
+flush!(bus, 5.0)
+
+# Сохраняем оригинальное состояние
+original_stats = copy(bus.stats)
+original_descriptors = copy(bus.descriptors)
+original_inbox_sizes = Dict(k => length(v) for (k,v) in bus.inboxes)
+
+# Сохраняем в файл
+checkpoint_file = "test_checkpoint.jld2"
+save_checkpoint(bus, checkpoint_file)
+
+# Очищаем шину
+clear!(bus)
+println("После clear!: stats = $(bus.stats)")
+
+# Загружаем обратно
+load_checkpoint(bus, checkpoint_file)
+
+# Проверяем восстановление
+println("\nПосле load_checkpoint:")
+println("stats[:published] = $(bus.stats[:published]) (ожидалось $(original_stats[:published]))")
+println("Количество дескрипторов = $(length(bus.descriptors)) (ожидалось $(length(original_descriptors)))")
+println("Размеры inbox = $(Dict(k => length(v) for (k,v) in bus.inboxes))")
+println("Ожидалось = $original_inbox_sizes")
+
+# Проверка дескрипторов
+for (i, desc) in enumerate(bus.descriptors)
+    orig_desc = original_descriptors[i]
+    println("\nДескриптор $i:")
+    println("  system: $(desc.system) == $(orig_desc.system) ? $(desc.system == orig_desc.system)")
+    println("  signal_type: $(desc.signal_type) == $(orig_desc.signal_type) ? $(desc.signal_type == orig_desc.signal_type)")
+    println("  receptors: $(desc.receptors) == $(orig_desc.receptors) ? $(desc.receptors == orig_desc.receptors)")
+end
+
+# Cleanup
+rm(checkpoint_file)
+```
+
+### Критерии passes
+- ✅ `bus.stats[:published]` восстановлено корректно
+- ✅ Количество дескрипторов совпадает
+- ✅ Поля дескрипторов (system, signal_type, receptors) совпадают
+- ✅ Размеры inbox совпадают
+- ✅ Файл чекпоинта успешно создан и прочитан
+
+---
+
+## 6. Проверка Broadcast (:ALL)
+
+### Цель
+Убедиться, что сигналы с target=:ALL доставляются всем подписчикам типа.
+
+### Шаги
+```julia
+using .EventBus, .SignalTypes
+
+bus = EventBus()
+
+received = Dict(:a => 0, :b => 0, :c => 0)
+
+subscribe!(bus, :sys_a, BaseSignal, s -> received[:a] += 1)
+subscribe!(bus, :sys_b, BaseSignal, s -> received[:b] += 1)
+subscribe!(bus, :sys_c, BaseSignal, s -> received[:c] += 1)
+
+# Публикуем broadcast сигнал
+signal = BaseSignal(0.0, :source, :ALL; receptors=Symbol[])
+publish!(bus, :source, signal)
+
+flush!(bus, 1.0)
+
+println("Результаты доставки:")
+for (sys, count) in received
+    println("  $sys: $count сигналов")
+end
+```
+
+### Критерии passes
+- ✅ Все три системы получили по 1 сигналу
+- ✅ `bus.stats[:delivered]` == 3
+
+---
+
+## 7. Проверка производительности
+
+### Цель
+Убедиться, что обработка 50k событий укладывается в лимиты.
+
+### Шаги
+```julia
+using .EventBus, .SignalTypes
+using BenchmarkTools
+
+bus = EventBus()
+subscribe!(bus, :target, BaseSignal, s -> nothing)
+
+n_events = 50_000
+
+# Засекаем время
+@time begin
+    for i in 1:n_events
+        signal = BaseSignal(float(i), :source, :target; 
+                            receptors=Symbol[], data=(;index=i))
+        publish!(bus, :source, signal)
+    end
+    reports = flush!(bus, float(n_events + 100))
+end
+
+println("\nСтатистика:")
+println("  Обработано событий: $(length(reports))")
+println("  Доставлено: $(bus.stats[:delivered])")
+
+# Проверка аллокаций
+allocs = @allocated begin
+    bus2 = EventBus()
+    subscribe!(bus2, :target, BaseSignal, s -> nothing)
+    for i in 1:10_000
+        signal = BaseSignal(float(i), :source, :target; 
+                            receptors=Symbol[], data=(;index=i))
+        publish!(bus2, :source, signal)
+    end
+    flush!(bus2, 10_100.0)
+end
+println("\nАллокации на 10k событий: $(allocs / 1_048_576) MB")
+```
+
+### Критерии passes
+- ✅ Время обработки 50k событий < 2000 ms (с запасом для CI)
+- ✅ Аллокации на 10k событий < 10 MB
+- ✅ Все события обработаны (`length(reports) == n_events`)
+
+---
+
+## Сводная таблица проверок
+
+| № | Проверка | Статус | Примечание |
+|---|----------|--------|------------|
+| 1 | Типостабильность flush! | ☐ | Нет `::Any` в @code_warntype |
+| 2 | Overflow inbox | ☐ | 10_050 событий → 10_000 в inbox |
+| 3 | Чтение логов | ☐ | EVENT_DELIVERED, EVENT_FILTERED видны |
+| 4 | TTL expiration | ☐ | EXPIRED при clock_time > timestamp+ttl |
+| 5 | JLD2 roundtrip | ☐ | Stats, descriptors, inboxes восстановлены |
+| 6 | Broadcast :ALL | ☐ | Все подписчики получили сигнал |
+| 7 | Производительность | ☐ | 50k < 2000ms, аллокации в норме |
+
+---
+
+## Команды для быстрой валидации
+
+```bash
+# Запустить все тесты
+julia --project test/runtests.jl
+
+# Запустить демо
+julia --project examples/demo_bus.jl
+
+# Проверка типостабильности (REPL)
+julia --project -e '
+    include("src/EventBus.jl");
+    include("src/SignalTypes.jl");
+    using .EventBus, .SignalTypes;
+    bus = EventBus();
+    subscribe!(bus, :t, BaseSignal, s->nothing);
+    publish!(bus, :s, BaseSignal(1.0,:s,:t;receptors=Symbol[]));
+    @code_warntype flush!(bus, 2.0)
+'
 ```
