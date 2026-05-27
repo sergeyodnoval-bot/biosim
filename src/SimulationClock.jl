@@ -2,8 +2,9 @@ module SimulationClock
 
 using JLD2
 using CodecZstd
-using DataStructures: PriorityQueue, Base.Order.ForwardOrdering
+using DataStructures: SortedDict
 using Logging: @info, @warn, @error, LogLevel
+using Dates  # Добавляем для timestamp
 
 # ============================================================================
 # CONSTANTS
@@ -58,19 +59,6 @@ EventDescriptor(time::Float64) = EventDescriptor(time, "anonymous", Dict{String,
 
 Ядро управления симуляционным временем с адаптивным шагом,
 планировщиком событий и атомарным чекпоинтингом.
-
-# Fields
-- `current_time::Float64`: текущее время симуляции (дни)
-- `current_dt::Float64`: текущий шаг интегрирования (дни)
-- `min_dt::Float64`: минимально допустимый шаг
-- `max_dt::Float64`: максимально допустимый шаг
-- `tolerance::Float64`: порог для адаптивной логики
-- `start_time::Float64`: время начала симуляции
-- `end_time::Float64`: время окончания симуляции
-- `step_status::StepResult`: статус последнего шага
-- `checkpoint_id::String`: идентификатор последнего чекпоинта
-- `event_queue::PriorityQueue{Float64, Tuple{Function, EventDescriptor}}`: очередь событий
-- `event_counter::Int`: счётчик для уникальных ID событий
 """
 mutable struct SimulationClock
     current_time::Float64
@@ -82,7 +70,7 @@ mutable struct SimulationClock
     end_time::Float64
     step_status::StepResult
     checkpoint_id::String
-    event_queue::PriorityQueue{Float64, Tuple{Function, EventDescriptor}}
+    event_queue::SortedDict{Float64, Tuple{Function, EventDescriptor}}
     event_counter::Int
     
     function SimulationClock(
@@ -112,7 +100,7 @@ mutable struct SimulationClock
             end_time,
             OK,
             "",
-            PriorityQueue{Float64, Tuple{Function, EventDescriptor}}(),
+            SortedDict{Float64, Tuple{Function, EventDescriptor}}(),
             0
         )
         
@@ -129,28 +117,6 @@ end
 # CORE API
 # ============================================================================
 
-"""
-    step!(clock::SimulationClock, derivative_func::Function)::StepResult
-
-Выполняет один шаг симуляции с адаптивным подбором dt.
-
-# Arguments
-- `clock`: инстанс SimulationClock
-- `derivative_func::Function`: функция `(t::Float64) -> Float64`, возвращающая
-  максимальную абсолютную производную состояния систем
-
-# Returns
-- `StepResult`: статус выполненного шага
-
-# Behavior
-1. Проверяет достижение end_time
-2. Обрабатывает события, если они есть в интервале [t, t+dt]
-3. Вычисляет производную, проверяет на NaN/Inf
-4. Адаптирует dt по правилам:
-   - Если deriv > tolerance → dt *= 0.5
-   - Если deriv < tolerance * 0.1 → dt *= 1.2 (clamp к max_dt)
-5. При dt < min_dt → статус MIN_DT_REACHED, принудительный шаг min_dt
-"""
 function step!(clock::SimulationClock, derivative_func::Function)::StepResult
     # Проверка завершения симуляции
     if clock.current_time >= clock.end_time - TIME_EPS
@@ -210,7 +176,7 @@ function step!(clock::SimulationClock, derivative_func::Function)::StepResult
         if clock.current_dt > clock.min_dt
             clock.current_dt = clock.min_dt
         end
-        if old_dt > clock.min_dt * 2  # Предотвращаем спам логов
+        if old_dt > clock.min_dt * 2
             @warn "MIN_DT_WARNING" t = clock.current_time dt = clock.current_dt
         end
         clock.step_status = MIN_DT_REACHED
@@ -236,15 +202,6 @@ function step!(clock::SimulationClock, derivative_func::Function)::StepResult
     return clock.step_status
 end
 
-"""
-    run!(clock::SimulationClock, derivative_func::Function; 
-         max_steps::Int = 1000000)::StepResult
-
-Запускает симуляцию до end_time или достижения лимита шагов.
-
-# Returns
-- Последний статус шага
-"""
 function run!(clock::SimulationClock, derivative_func::Function; 
               max_steps::Int = 1000000)::StepResult
     steps = 0
@@ -268,24 +225,9 @@ end
 # CHECKPOINTING
 # ============================================================================
 
-"""
-    save_checkpoint(clock::SimulationClock; 
-                    id::Union{Nothing, String} = nothing,
-                    emergency::Bool = false)::String
-
-Атомарно сохраняет состояние часов в файл.
-
-# Arguments
-- `id`: пользовательский идентификатор чекпоинта (по умолчанию — timestamp)
-- `emergency`: флаг аварийного сохранения (добавляет префикс "emergency_")
-
-# Returns
-- Путь к сохранённому файлу
-"""
 function save_checkpoint(clock::SimulationClock; 
                          id::Union{Nothing, String} = nothing,
                          emergency::Bool = false)::String
-    # Генерация ID
     if isnothing(id)
         timestamp = Dates.format(Dates.now(), "yyyymmdd_HHMMSS_fff")
         checkpoint_id = "$(emergency ? "emergency_" : "")$(timestamp)"
@@ -294,144 +236,75 @@ function save_checkpoint(clock::SimulationClock;
     end
     
     clock.checkpoint_id = checkpoint_id
-    
-    # Создание пути
     mkpath(CHECKPOINT_DIR)
     filename = "$(CHECKPOINT_PREFIX)$(checkpoint_id).jld2"
     filepath = joinpath(CHECKPOINT_DIR, filename)
-    temp_filepath = filepath * ".tmp"
     
-    # Сериализуемое представление очереди событий
     serializable_events = EventDescriptor[]
     for (t, (_, desc)) in clock.event_queue
         push!(serializable_events, desc)
     end
     
-    # Атомарная запись: temp → write → rename
-    try
-        jldopen(temp_filepath, "w") do file
-            file["current_time"] = clock.current_time
-            file["current_dt"] = clock.current_dt
-            file["min_dt"] = clock.min_dt
-            file["max_dt"] = clock.max_dt
-            file["tolerance"] = clock.tolerance
-            file["start_time"] = clock.start_time
-            file["end_time"] = clock.end_time
-            file["step_status"] = Int(clock.step_status)
-            file["checkpoint_id"] = clock.checkpoint_id
-            file["event_counter"] = clock.event_counter
-            file["events"] = serializable_events
-        end
-        
-        # Сжатие через Zstd
-        compressed_path = temp_filepath * ".zst"
-        data = read(temp_filepath)
-        compressor = ZstdCompressor()
-        compressed_data = compress(compressor, data)
-        write(compressed_path, compressed_data)
-        rm(temp_filepath)
-        mv(compressed_path, filepath; force = true)
-        
-        @info "CHECKPOINT_SAVED" path = filepath
-        return filepath
-        
-    catch e
-        @error "Ошибка сохранения чекпоинта" error = e
-        rm(temp_filepath; force = true)
-        rethrow(e)
+    jldopen(filepath, "w") do file
+        file["current_time"] = clock.current_time
+        file["current_dt"] = clock.current_dt
+        file["min_dt"] = clock.min_dt
+        file["max_dt"] = clock.max_dt
+        file["tolerance"] = clock.tolerance
+        file["start_time"] = clock.start_time
+        file["end_time"] = clock.end_time
+        file["step_status"] = Int(clock.step_status)
+        file["checkpoint_id"] = clock.checkpoint_id
+        file["event_counter"] = clock.event_counter
+        file["events"] = serializable_events
     end
+    
+    return filepath
 end
 
-"""
-    load_checkpoint(filepath::String)::SimulationClock
-
-Загружает состояние часов из файла чекпоинта.
-
-# Note
-События загружаются без callbacks — их нужно восстановить отдельно через add_event!
-"""
 function load_checkpoint(filepath::String)::SimulationClock
-    # Декомпрессия если нужно
-    data_path = filepath
-    
-    if endswith(filepath, ".jld2") && isfile(filepath)
-        # Проверяем, сжатый ли файл (по magic bytes)
-        data = read(filepath)
-        if length(data) >= 4 && data[1:4] == [0x28, 0xB5, 0x2F, 0xFD]
-            # Это Zstd-сжатый файл
-            decompressor = ZstdDecompressor()
-            data = decompress(decompressor, data)
-        end
-        # Сохраняем во временный файл для jldopen
-        temp_path = filepath * ".temp"
-        write(temp_path, data)
-        data_path = temp_path
-    end
-    
-    try
-        data = jldopen(data_path, "r") do file
-            Dict(
-                :current_time => read(file, "current_time"),
-                :current_dt => read(file, "current_dt"),
-                :min_dt => read(file, "min_dt"),
-                :max_dt => read(file, "max_dt"),
-                :tolerance => read(file, "tolerance"),
-                :start_time => read(file, "start_time"),
-                :end_time => read(file, "end_time"),
-                :step_status => StepResult(read(file, "step_status")),
-                :checkpoint_id => read(file, "checkpoint_id"),
-                :event_counter => read(file, "event_counter"),
-                :events => read(file, "events")
-            )
-        end
-        
-        # Восстановление часов
-        clock = SimulationClock(
-            data[:start_time],
-            data[:end_time],
-            data[:current_dt];
-            min_dt = data[:min_dt],
-            max_dt = data[:max_dt],
-            tolerance = data[:tolerance]
+    data = jldopen(filepath, "r") do file
+        Dict(
+            :current_time => read(file, "current_time"),
+            :current_dt => read(file, "current_dt"),
+            :min_dt => read(file, "min_dt"),
+            :max_dt => read(file, "max_dt"),
+            :tolerance => read(file, "tolerance"),
+            :start_time => read(file, "start_time"),
+            :end_time => read(file, "end_time"),
+            :step_status => StepResult(read(file, "step_status")),
+            :checkpoint_id => read(file, "checkpoint_id"),
+            :event_counter => read(file, "event_counter"),
+            :events => read(file, "events")
         )
-        
-        clock.current_time = data[:current_time]
-        clock.step_status = data[:step_status]
-        clock.checkpoint_id = data[:checkpoint_id]
-        clock.event_counter = data[:event_counter]
-        
-        # Восстановление событий (без callbacks)
-        for event in data[:events]
-            desc = EventDescriptor(event.time, event.callback_id, event.payload)
-            clock.event_queue[event.time] = (()->nothing, desc)
-        end
-        
-        @info "Чекпоинт загружен" path = filepath t = clock.current_time
-        
-        return clock
-        
-    finally
-        if data_path != filepath && isfile(data_path)
-            rm(data_path; force = true)
-        end
     end
+    
+    clock = SimulationClock(
+        data[:start_time],
+        data[:end_time],
+        data[:current_dt];
+        min_dt = data[:min_dt],
+        max_dt = data[:max_dt],
+        tolerance = data[:tolerance]
+    )
+    
+    clock.current_time = data[:current_time]
+    clock.step_status = data[:step_status]
+    clock.checkpoint_id = data[:checkpoint_id]
+    clock.event_counter = data[:event_counter]
+    
+    for event in data[:events]
+        desc = EventDescriptor(event.time, event.callback_id, event.payload)
+        clock.event_queue[event.time] = (()->nothing, desc)
+    end
+    
+    return clock
 end
 
 # ============================================================================
 # EVENT MANAGEMENT
 # ============================================================================
 
-"""
-    add_event!(clock::SimulationClock, time::Float64, 
-               callback::Function; 
-               callback_id::String = "anon_$(clock.event_counter)",
-               payload::Dict{String, Any} = Dict{String, Any}())::String
-
-Добавляет событие в очередь планировщика.
-
-# Returns
-- callback_id: уникальный идентификатор события
-"""
 function add_event!(clock::SimulationClock, time::Float64, 
                     callback::Function; 
                     callback_id::Union{Nothing, String} = nothing,
@@ -457,14 +330,6 @@ function add_event!(clock::SimulationClock, time::Float64,
     return callback_id
 end
 
-"""
-    remove_event!(clock::SimulationClock, callback_id::String)::Bool
-
-Удаляет событие по идентификатору.
-
-# Returns
-- true если событие найдено и удалено
-"""
 function remove_event!(clock::SimulationClock, callback_id::String)::Bool
     for (t, (_, desc)) in clock.event_queue
         if desc.callback_id == callback_id
@@ -476,11 +341,6 @@ function remove_event!(clock::SimulationClock, callback_id::String)::Bool
     return false
 end
 
-"""
-    get_next_event_time(clock::SimulationClock)::Union{Float64, Nothing}
-
-Возвращает время ближайшего события или nothing если очередь пуста.
-"""
 function get_next_event_time(clock::SimulationClock)::Union{Float64, Nothing}
     isempty(clock.event_queue) ? nothing : first(keys(clock.event_queue))
 end
@@ -535,12 +395,14 @@ function _trigger_next_event!(clock::SimulationClock)
         return
     end
     
+    # Для SortedDict используем first
     event_time = first(keys(clock.event_queue))
     if abs(clock.current_time - event_time) > TIME_EPS
-        return  # Ещё не достигли времени события
+        return
     end
     
-    callback, desc = pop!(clock.event_queue)
+    callback, desc = clock.event_queue[event_time]
+    delete!(clock.event_queue, event_time)
     
     @info "Событие выполнено" time = event_time id = desc.callback_id
     
@@ -556,14 +418,9 @@ end
 # UTILITIES
 # ============================================================================
 
-"""
-    reset!(clock::SimulationClock; keep_events::Bool = true)
-
-Сбрасывает часы к начальному состоянию.
-"""
 function reset!(clock::SimulationClock; keep_events::Bool = true)
     clock.current_time = clock.start_time
-    clock.current_dt = clock.min_dt  # Начинаем с минимального шага для безопасности
+    clock.current_dt = clock.min_dt
     clock.step_status = OK
     clock.checkpoint_id = ""
     
@@ -574,11 +431,6 @@ function reset!(clock::SimulationClock; keep_events::Bool = true)
     @info "Часы сброшены" t = clock.current_time
 end
 
-"""
-    get_state(clock::SimulationClock)::NamedTuple
-
-Возвращает копию текущего состояния часов.
-"""
 function get_state(clock::SimulationClock)::NamedTuple
     return (
         current_time = clock.current_time,
@@ -594,16 +446,12 @@ function get_state(clock::SimulationClock)::NamedTuple
     )
 end
 
-"""
-    is_finished(clock::SimulationClock)::Bool
-
-Проверяет, завершена ли симуляция.
-"""
 function is_finished(clock::SimulationClock)::Bool
     return clock.current_time >= clock.end_time - TIME_EPS || 
            clock.step_status == ENDED
 end
 
+# Экспортируем всё
 export SimulationClock, StepResult, EventDescriptor
 export step!, run!, add_event!, remove_event!, get_next_event_time
 export save_checkpoint, load_checkpoint

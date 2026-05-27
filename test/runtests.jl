@@ -1,7 +1,5 @@
 # SimulationClock Test Runner
 
-using Test
-
 # Запуск всех тестов
 include("clock_tests.jl")
 

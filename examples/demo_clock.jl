@@ -4,8 +4,7 @@
 # Запуск симуляции 0→365 дней с логированием dt и авто-чекпоинтами каждые 30 дней
 # ============================================================================
 
-using Logging
-using Dates
+using Logging: @info, @warn, @error, LogLevel
 
 # Подключаем модуль
 include("../src/SimulationClock.jl")

@@ -2,12 +2,25 @@ name = "SimulationClock"
 uuid = "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
 
 [deps]
-JLD2 = "033835bb-8acc-5ee8-8aae-3f567f8a3819"
 CodecZstd = "6b39b394-51ab-5f42-8807-6242bab2b4c2"
 DataStructures = "864edb3b-99cc-5e75-8d2d-829cb0a9cfe8"
+Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
+JLD2 = "033835bb-8acc-5ee8-8aae-3f567f8a3819"
+Logging = "56ddb016-857b-54e1-b83d-db4d58db5568"
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [compat]
-julia = "1.10"
-JLD2 = "0.4"
 CodecZstd = "0.7"
 DataStructures = "0.18"
+Dates = "1.11.0"
+JLD2 = "0.4"
+Logging = "1.11.0"
+Test = "1.11.0"
+julia = "1.10"
+
+[extras]
+Logging = "56ddb016-857b-54e0-b962-36f548c55a72"
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[target]
+test = ["Test", "Logging"]
