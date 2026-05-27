@@ -14,6 +14,7 @@ export EventBus, subscribe!, publish!, flush!, clear!, inbox
 export EVENT_PUBLISHED, EVENT_DELIVERED, EVENT_FILTERED, INBOX_OVERFLOW, TTL_EXPIRED
 export save_checkpoint, load_checkpoint, MAX_INBOX_SIZE, DEFAULT_TTL
 export DELIVERED, FILTERED, EXPIRED, OVERFLOW  # Экспортируем enum значения
+export save_state, load_state!
 
 # ============================================================================
 # CONSTANTS & CONFIG
@@ -319,6 +320,81 @@ function load_checkpoint(bus::EventBus, filename::String)
         bus.stats = file["stats"]
     end
     @info "Checkpoint loaded" filename=filename
+end
+
+# ============================================================================
+# SERIALIZATION (for kernel checkpointing)
+# ============================================================================
+
+"""
+    save_state(bus::EventBus) -> NamedTuple
+
+Сохраняет состояние шины в JLD2-совместимом формате.
+Возвращает подписки и ожидающие события без функций-обработчиков.
+"""
+function save_state(bus::EventBus)::NamedTuple
+    # Преобразуем подписки в сериализуемый формат (без функций)
+    subscriptions_data = Vector{NamedTuple}()
+    for ((system, signal_type), handlers) in bus.subscriptions
+        for (handler_func, receptors) in handlers
+            # Находим descriptor для этой подписки
+            desc_idx = findfirst(d -> d.system == system && d.signal_type == signal_type, bus.descriptors)
+            config_str = desc_idx !== nothing ? string(bus.descriptors[desc_idx].config) : ""
+            push!(subscriptions_data, (
+                system = system,
+                signal_type = signal_type,
+                receptors = receptors,
+                config = config_str
+            ))
+        end
+    end
+    
+    return (
+        subscriptions = subscriptions_data,
+        pending_events = bus.pending_signals,
+        inboxes = bus.inboxes,
+        descriptors = bus.descriptors,
+        stats = bus.stats
+    )
+end
+
+"""
+    load_state!(bus::EventBus, data::NamedTuple) -> Nothing
+
+Восстанавливает состояние шины из сохранённых данных.
+Обработчики событий не восстанавливаются — требуется повторная подписка систем.
+"""
+function load_state!(bus::EventBus, data::NamedTuple)::Nothing
+    # Очищаем текущее состояние
+    empty!(bus.subscriptions)
+    empty!(bus.pending_signals)
+    empty!(bus.inboxes)
+    empty!(bus.descriptors)
+    
+    # Восстанавливаем дескрипторы
+    bus.descriptors = data.descriptors
+    
+    # Восстанавливаем статистику
+    bus.stats = data.stats
+    
+    # Восстанавливаем ожидающие события
+    bus.pending_signals = data.pending_events
+    
+    # Восстанавливаем inbox'и
+    bus.inboxes = data.inboxes
+    
+    # Восстанавливаем метаданные подписок (без функций-обработчиков)
+    for sub_data in data.subscriptions
+        key = (sub_data.system, sub_data.signal_type)
+        if !haskey(bus.subscriptions, key)
+            bus.subscriptions[key] = Vector{Tuple{Function, Vector{Symbol}}}()
+        end
+        # Пустой placeholder для handler — система должна переподписаться
+        push!(bus.subscriptions[key], ((s)->nothing, sub_data.receptors))
+    end
+    
+    @info "Состояние шины загружено" subscriptions = length(data.subscriptions) pending = length(data.pending_events)
+    return nothing
 end
 
 end # module EventBus

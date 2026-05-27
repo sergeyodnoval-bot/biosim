@@ -451,11 +451,83 @@ function is_finished(clock::SimulationClock)::Bool
            clock.step_status == ENDED
 end
 
+# ============================================================================
+# SERIALIZATION (for checkpointing)
+# ============================================================================
+
+"""
+    save_state(clock::SimulationClock) -> NamedTuple
+
+Сохраняет состояние часов в JLD2-совместимом формате.
+Функции callback не сохраняются — только метаданные событий.
+"""
+function save_state(clock::SimulationClock)::NamedTuple
+    # Преобразуем event_queue в сериализуемый формат
+    events_data = Vector{NamedTuple}()
+    for (t, (callback, desc)) in clock.event_queue
+        # Сохраняем только метаданные события, не функцию
+        push!(events_data, (
+            time = t,
+            callback_id = desc.callback_id,
+            payload = desc.payload
+        ))
+    end
+    
+    return (
+        current_time = clock.current_time,
+        current_dt = clock.current_dt,
+        min_dt = clock.min_dt,
+        max_dt = clock.max_dt,
+        tolerance = clock.tolerance,
+        start_time = clock.start_time,
+        end_time = clock.end_time,
+        step_status = Int(clock.step_status),  # Сериализуем enum как Int
+        checkpoint_id = clock.checkpoint_id,
+        events = events_data
+    )
+end
+
+"""
+    load_state!(clock::SimulationClock, data::NamedTuple) -> Nothing
+
+Восстанавливает состояние часов из сохранённых данных.
+События восстанавливаются без callback-функций (требуется повторная регистрация).
+"""
+function load_state!(clock::SimulationClock, data::NamedTuple)::Nothing
+    clock.current_time = data.current_time
+    clock.current_dt = data.current_dt
+    clock.min_dt = data.min_dt
+    clock.max_dt = data.max_dt
+    clock.tolerance = data.tolerance
+    clock.start_time = data.start_time
+    clock.end_time = data.end_time
+    clock.step_status = StepResult(data.step_status)
+    clock.checkpoint_id = data.checkpoint_id
+    
+    # Очищаем очередь событий (callback-функции не восстанавливаются)
+    empty!(clock.event_queue)
+    
+    # Восстанавливаем метаданные событий (без функций)
+    for event_data in data.events
+        desc = EventDescriptor(
+            event_data.time,
+            event_data.callback_id,
+            event_data.payload
+        )
+        # Пустой placeholder для callback — система должна перерегистрировать события
+        clock.event_queue[event_data.time] = (()->nothing, desc)
+    end
+    
+    @info "Состояние часов загружено" t = clock.current_time events = length(data.events)
+    return nothing
+end
+
 # Экспортируем всё
 export SimulationClock, StepResult, EventDescriptor
 export step!, run!, add_event!, remove_event!, get_next_event_time
 export save_checkpoint, load_checkpoint
 export reset!, get_state, is_finished
+export save_state, load_state!
 export OK, EVENT_TRIGGERED, MIN_DT_REACHED, ENDED, DIVERGENCE
 
 end # module

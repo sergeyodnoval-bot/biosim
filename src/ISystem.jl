@@ -2,7 +2,7 @@ module ISystem
 
 using Logging
 
-export AbstractSystem, ISystem
+export AbstractSystem
 export init!, step!, max_derivative, shutdown!, save_state, load_state!
 
 # ============================================================================
@@ -35,7 +35,6 @@ abstract type AbstractSystem end
 - `save_state` должен возвращать только JLD2-совместимые типы (`NamedTuple`, `Vector`, `Float64`, `Symbol`, `String`)
 - Запрещены глобальные мутации и неявные `Any`
 """
-interface ISystem <: AbstractSystem end
 
 # ============================================================================
 # INTERFACE METHODS (to be implemented by concrete systems)
