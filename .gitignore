@@ -1,21 +1,28 @@
-# Julia-specific ignores
-.julia/
+```
+# Compiled and build artifacts
 *.ji
-*.mem
-*.lock
-Manifest.toml
-logs/
-test/
-docs/build/
+*.o
+*.obj
+*.out
 
 # Dependencies
-deps/
-build/
+.julia/
+*.jl.cov
+*.jl.lcov
+
+# Logs and temp files
+*.log
+*.tmp
+*.swp
+
+# Coverage
+coverage/
+*.cov
 
 # Environment
 .env
 .env.local
-*.env.*
+.env.*
 
 # Editors
 .vscode/
@@ -23,10 +30,12 @@ build/
 *.swp
 *.swo
 
-# Logs and temp files
-*.log
-*.tmp
-
 # OS
 .DS_Store
 Thumbs.db
+
+# Julia-specific
+.julia/
+*.jl.bak
+*.jl~
+```
