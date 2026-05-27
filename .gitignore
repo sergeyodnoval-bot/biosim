@@ -3,17 +3,13 @@
 *.ji
 *.o
 *.obj
-*.so
-*.dylib
-*.dll
 build/
 dist/
 
 # Dependencies
 .julia/
-.julia-environments/
 deps/
-test/
+*.jl.cov
 
 # Logs and temp files
 *.log
@@ -21,10 +17,16 @@ test/
 *.swp
 
 # Editors
-.julia_scratch/
-.repl_history.jl
+.vscode/
+.idea/
 
-# Package manager
-Manifest.toml
-Project.toml.bak
+# Coverage
+.coverage
+coverage/
+htmlcov/
+
+# Environment
+.env
+.env.local
+*.env.*
 ```

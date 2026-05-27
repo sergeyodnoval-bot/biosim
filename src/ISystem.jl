@@ -251,18 +251,12 @@ end
 ```
 """
 macro implement_system(SystemType)
+    sys_name = string(SystemType)
+    doc_string = "Реализуйте следующие методы для $sys_name:\n- init!(sys, clock, bus)\n- step!(sys, dt, t)\n- max_derivative(sys, t)\n- shutdown!(sys)\n- save_state(sys)\n- load_state!(sys, data)"
     esc(quote
         # Методы уже определены в модуле ISystem, просто напоминаем о необходимости реализации
         # Этот макрос служит документационной цели
-        @doc """
-        Реализуйте следующие методы для $($(SystemType)):
-        - init!(sys, clock, bus)
-        - step!(sys, dt, t)
-        - max_derivative(sys, t)
-        - shutdown!(sys)
-        - save_state(sys)
-        - load_state!(sys, data)
-        """ $($(SystemType))
+        @doc $doc_string $($(SystemType))
     end)
 end
 
