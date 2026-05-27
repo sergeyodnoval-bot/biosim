@@ -1,25 +1,18 @@
-# Compiled and build artifacts
+```
+# Julia specific
+.julia/
 *.ji
-*.o
-*.obj
-*.so
-*.dylib
-*.dll
-*.exe
-*.out
+*.jl.cov
+*.jl.info
+.coverage/
+docs/build/
 
 # Dependencies
-.julia/
 deps/
 build/
-dist/
-target/
 
-# Logs and temp files
+# Logs
 *.log
-*.tmp
-*.swp
-*.swo
 
 # Environment
 .env
@@ -32,18 +25,11 @@ target/
 *.swp
 *.swo
 
-# Julia-specific
-*.jl.cov
-*.jl.info
-Coverage/
-.JunoSettings
-Manifest.toml
-PlotlyJS/*
-!PlotlyJS/src
-!PlotlyJS/deps
-!PlotlyJS/LICENSE
-!PlotlyJS/README.md
-!PlotlyJS/Project.toml
-!PlotlyJS/src/*.jl
-!PlotlyJS/deps/*.jl
-!PlotlyJS/test/*.jl
+# OS
+.DS_Store
+Thumbs.db
+
+# Build/test artifacts
+test/reports/
+*.out
+```

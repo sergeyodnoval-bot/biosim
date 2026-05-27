@@ -6,7 +6,11 @@ using JLD2
 using StructTypes
 using DataStructures
 
-export AbstractSignal, BaseSignal, DeliveryReport, DeliveryStatus
+# SignalTypes должен быть загружен первым для AbstractSignal
+include("SignalTypes.jl")
+using .SignalTypes: AbstractSignal, NeuralSignal, HormoneSignal, MetabolicSignal
+
+export AbstractSignal, BaseSignal, DeliveryReport, DeliveryStatus, NeuralSignal, HormoneSignal, MetabolicSignal
 export EventBus, subscribe!, publish!, flush!, clear!, inbox
 export EVENT_PUBLISHED, EVENT_DELIVERED, EVENT_FILTERED, INBOX_OVERFLOW, TTL_EXPIRED
 
@@ -32,16 +36,9 @@ const INBOX_OVERFLOW = :INBOX_OVERFLOW
 const TTL_EXPIRED = :TTL_EXPIRED
 
 # ============================================================================
-# SIGNAL TYPES
+# SIGNAL TYPES (moved to SignalTypes.jl, kept here for backward compat)
+# AbstractSignal is now defined in SignalTypes module
 # ============================================================================
-
-"""
-    AbstractSignal
-
-Базовый абстрактный тип для всех сигналов в шине событий.
-Все конкретные типы сигналов должны наследовать этот тип.
-"""
-abstract type AbstractSignal end
 
 """
     BaseSignal <: AbstractSignal
