@@ -5,12 +5,9 @@ using UUIDs
 using Logging
 using JLD2
 
-# Подключаем модули
+# Подключаем модули - EventBus теперь включает SignalTypes
 include("../src/EventBus.jl")
 using .EventBus
-
-include("../src/SignalTypes.jl")
-using .SignalTypes
 
 export run_all_tests
 

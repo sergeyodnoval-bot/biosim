@@ -1,9 +1,11 @@
 module SignalTypes
 
 using UUIDs
-using ..EventBus: AbstractSignal
 
-export NeuralSignal, HormoneSignal, MetabolicSignal
+# AbstractSignal определяется здесь, а затем экспортируется в EventBus
+abstract type AbstractSignal end
+
+export AbstractSignal, NeuralSignal, HormoneSignal, MetabolicSignal
 
 """
     NeuralSignal <: AbstractSignal
